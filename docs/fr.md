@@ -1,67 +1,120 @@
-# Template de démonstration
+# Theengs / OpenMQTTGateway
 
-Ceci est la documentation utilisateur de l'intégration. Gladys ré-héberge ce
-fichier et affiche un lien **Documentation** permanent vers lui dans l'écran
-de configuration (dans la langue de l'utilisateur, avec l'anglais en repli) —
-c'est au moment de configurer que l'utilisateur en a le plus besoin. Gardez
-les courtes indications d'accueil dans les blocs `section` du `config_schema`
-du manifest ; mettez ici le pas-à-pas détaillé (captures d'écran, dépannage…).
+Les capteurs Bluetooth (BLE) décodés par une passerelle **OpenMQTTGateway** (ESP32) ou **Theengs
+Gateway** (Raspberry Pi, module complémentaire Home Assistant, Docker), et avec un module radio les
+capteurs 433 MHz décodés par **rtl_433**, lus sur votre broker MQTT. La passerelle s'occupe du
+Bluetooth et de la radio : Gladys lit seulement ce qu'elle publie.
+
+> Développée sans le matériel : vos retours sont les bienvenus. Les messages utilisés dans les tests
+> suivent le format exact des deux passerelles, mais aucune vraie passerelle n'a été branchée.
 
 ## Ce que vous obtenez
 
-Six appareils de démonstration apparaissent après l'installation : une
-station météo (vraies données Open-Meteo), un interrupteur, une lampe
-variable, une prise connectée avec mesure de puissance, un détecteur de
-mouvement et une caméra.
+- **Capteurs** : un appareil par capteur décodé que vous ajoutez, avec ce que rapporte le décodeur :
+  température, humidité, batterie, pile faible, humidité du sol, luminosité, pression, CO2, PM2,5,
+  PM10, formaldéhyde, mouvement, ouverture (détecteurs de porte et de fenêtre), sondes des
+  thermomètres de cuisson. Xiaomi (LYWSD03MMC, firmware d'origine ou ATC / PVVX), SwitchBot, Inkbird,
+  Govee, Qingping, Shelly BLU, BTHome, ThermoBeacon et plus de 150 autres modèles de Theengs Decoder.
+- **Capteurs 433 MHz** décodés par rtl_433 (stations météo Oregon Scientific, Acurite, LaCrosse,
+  Fine Offset…) : température, humidité, pile faible, pression, vent, luminosité, UV, contacts.
+- **Passerelles** : en ligne ou non, temps de fonctionnement (OpenMQTTGateway), nombre d'appareils
+  entendus.
+- **Scènes** : un déclencheur pour les boutons Bluetooth, un déclencheur pour les codes 433 MHz,
+  infrarouges et de télécommandes rtl_433, une action pour vérifier piles et capteurs muets.
+- **Tableau de bord** : le widget Capteurs Theengs.
+
+## Avant de commencer
+
+- Une passerelle qui publie sur un broker MQTT :
+  - **OpenMQTTGateway** v1.x sur un ESP32, avec le module BLE (et RTL_433, RF ou IR si votre carte
+    les a) ;
+  - ou **Theengs Gateway** avec ses sujets par défaut (`home/TheengsGateway/BTtoMQTT`).
+- L'adresse du broker, et un nom d'utilisateur et un mot de passe s'il en demande. Le broker installé
+  par Gladys (intégration MQTT) convient.
+- Les capteurs chiffrés (Xiaomi avec clé de liaison, Shelly BLU chiffré, BTHome chiffré) ne sont
+  décodés que si vous avez donné la clé à la passerelle.
 
 ## Configuration
 
-1. Ouvrez l'onglet **Configuration** de l'intégration.
-2. Renseignez la **latitude** et la **longitude** que la station météo de
-   démonstration doit observer (Paris par défaut), et choisissez votre unité
-   de température. L'**intervalle de rafraîchissement** règle la fréquence
-   de lecture de la station météo et de la puissance de la prise : toutes
-   les 5 minutes par défaut, toutes les minutes au plus.
-3. Enregistrez : les appareils apparaissent dans l'onglet **Découverte**,
-   prêts à être ajoutés.
+| Champ                           | Rôle                                                                                        |
+| ------------------------------- | ------------------------------------------------------------------------------------------- |
+| Adresse du broker               | `mqtt://` (1883) ou `mqtts://` (8883), par ex. `mqtt://192.168.1.10:1883`.                  |
+| Nom d'utilisateur, mot de passe | Vides pour un broker anonyme.                                                               |
+| Certificat auto-signé           | `mqtts://` seulement.                                                                       |
+| Racine des sujets               | `home` : la partie avant le nom de la passerelle dans `home/OpenMQTTGateway/BTtoMQTT`.      |
+| Proposer les capteurs 433 MHz   | Décochez pour masquer tous les capteurs rtl_433 de la Découverte (ceux des voisins…).       |
+| Langue des textes               | Noms des fonctionnalités à l'ajout d'un appareil, phrases des scènes, messages des actions. |
 
-Le réglage **Préférer la connexion locale** pilote la prise de
-démonstration : elle affiche en badge le canal réellement utilisé (local ou
-cloud), avec un point orange quand elle fonctionne en mode dégradé (local
-refusé, bascule cloud).
+Deux boutons sur la page de l'intégration : **Vérifier la connexion** (broker, passerelles et
+appareils entendus) et **Afficher les derniers codes** (les derniers codes 433 MHz, infrarouges et
+rtl_433, à recopier dans une scène).
 
-## Actions
+L'intégration s'abonne seulement aux sujets des passerelles (`BTtoMQTT`, `RTL_433toMQTT`,
+`433toMQTT`, `IRtoMQTT`, `LWT`, `SYStoMQTT`) : elle ne publie jamais rien.
 
-- **Tester le fournisseur météo** — effectue une requête en direct vers
-  Open-Meteo et affiche la température et l'humidité actuelles sous le
-  bouton.
-- **Identifier un appareil** — choisissez un de vos appareils dans la liste
-  et il se signale (la lampe de démonstration « clignote » dans les logs).
+## Appareils
+
+Ouvrez l'onglet **Découverte** de l'intégration : il liste les passerelles, et les capteurs entendus
+dans les 10 dernières minutes que le décodeur a reconnus et qui rapportent au moins une valeur.
+Ajoutez ceux que vous voulez ; donnez-leur un nom et une pièce comme à tout appareil.
+
+- Un capteur Bluetooth est identifié par son adresse MAC, un capteur rtl_433 par son modèle, son
+  canal et son identifiant. Beaucoup de capteurs 433 MHz bon marché tirent un nouvel identifiant au
+  changement de pile : ajoutez alors le nouvel appareil.
+- Écartés exprès : les annonces non décodées, les téléphones, montres et autres appareils à adresse
+  aléatoire (Apple, Microsoft, balises de notification d'exposition). Pour la présence pièce par
+  pièce, voyez l'intégration ESPresense.
+- Un capteur qui rapporte plus tard une nouvelle valeur (la sonde d'un thermomètre branchée…) est
+  reproposé avec **Mettre à jour** dans la Découverte.
+- Les mesures partent vers Gladys toutes les 30 secondes quand elles changent ; une porte, un
+  mouvement ou une pile faible, tout de suite.
+- Un SwitchBot Blind Tilt n'a que sa batterie : son `open` est une position, pas une porte.
+
+## Passerelles
+
+Un appareil passerelle indique si la passerelle est en ligne (son dernier message MQTT, `LWT`),
+combien d'appareils décodés elle a entendus dans les 10 dernières minutes et, pour OpenMQTTGateway,
+son temps de fonctionnement (`SYStoMQTT`). Plusieurs passerelles peuvent entendre le même capteur :
+les mesures sont les mêmes, les appuis de bouton et les codes ne comptent qu'une fois.
 
 ## Scènes
 
-L'intégration ajoute ses propres cartes à l'éditeur de scènes (Gladys 5.1
-ou plus récent), dans la catégorie **Intégrations** :
-
-- **Mouvement détecté** (déclencheur) — lance la scène quand un détecteur
-  de démonstration voit bouger quelque chose. Choisissez éventuellement le
-  détecteur et ce qui a bougé (personne, animal) ; laissés vides, toute
-  détection correspond. Les actions suivantes peuvent lire ce qui a bougé
-  avec `{{triggerEvent.data.target}}`.
-- **Identifier un appareil** (action) — fait se signaler l'appareil choisi.
-  Elle indique si l'appareil a pu se signaler, pour que les actions
-  suivantes puissent en dépendre.
+- **Bouton Bluetooth appuyé** (déclencheur) : un bouton Bluetooth ajouté à Gladys (Shelly BLU
+  Button, télécommande BTHome…). Filtres : le bouton, l'appui (simple, double, triple, long), le
+  numéro du bouton sur une télécommande à quatre boutons. Variables : nom, appui, numéro, code de
+  l'événement.
+- **Code reçu** (déclencheur) : une passerelle a reçu un code 433 MHz (sonnette, télécommande,
+  détecteur), un code infrarouge, ou une télécommande décodée par rtl_433. Filtres : le code, son
+  type, la passerelle. Appuyez sur la télécommande, puis **Afficher les derniers codes** sur la page
+  de l'intégration donne le code à recopier. Un code répété en moins de 1,5 seconde compte une fois.
+- **Vérifier les capteurs** (action) : les capteurs ajoutés à Gladys dont la pile est faible (sous
+  20 % sauf autre choix) et ceux qu'aucune passerelle n'a entendus depuis plus de 2 heures (sauf
+  autre choix), en une phrase prête pour un message, avec les deux nombres. Exemple : chaque
+  dimanche, envoyer la phrase quand un nombre dépasse 0.
 
 ## Tableau de bord
 
-Ajoutez le widget **État de la démo** à un tableau de bord : il affiche en
-direct la température de la station météo et la puissance de la prise du
-bureau, la connexion utilisée par la prise (en orange si dégradée) et la
-position observée. Son bouton **Identifier la lampe** fait se signaler la
-lampe de démonstration.
+Le widget **Capteurs Theengs** liste les capteurs et passerelles ajoutés à Gladys, ceux à surveiller
+en tête : passerelle hors ligne, capteur muet depuis 2 heures, pile faible. Réglages : afficher les
+passerelles, afficher le niveau des piles.
+
+## Limites
+
+- Lecture seule : aucune commande n'est envoyée aux appareils, et l'envoi de codes 433 MHz ou
+  infrarouges n'est pas pris en charge.
+- Les annonces non décodées et les appareils à adresse aléatoire sont ignorés.
+- Recouvrements : Gladys lit le Bluetooth elle-même avec l'intégration Bluetooth (sur la machine de
+  Gladys) ; le 433 MHz avec les intégrations RFlink et RFPlayer ; et l'intégration MQTT peut lire
+  n'importe quel sujet à la main. Cette intégration sert aux capteurs qu'une passerelle Theengs ou
+  OpenMQTTGateway décode déjà.
+- La durée de silence d'un capteur compte au pire depuis le démarrage de l'intégration.
 
 ## Dépannage
 
-L'intégration journalise tout ce qu'elle fait : consultez les logs de
-l'intégration depuis l'interface Gladys (ou `docker logs` sur l'hôte) avec
-`LOG_LEVEL=debug` pour le détail complet.
+- **Vérifier la connexion** ne voit aucune passerelle : vérifiez la racine des sujets (la première
+  partie des sujets, `home` par défaut) et que la passerelle utilise le même broker
+  (`mosquitto_sub -v -t 'home/#'`).
+- Un capteur manque dans la Découverte : il doit être décodé par la passerelle (`model_id` dans son
+  message) et entendu dans les 10 dernières minutes. Les capteurs chiffrés demandent leur clé dans la
+  passerelle.
+- Journaux détaillés : `LOG_LEVEL=debug` sur le conteneur.

@@ -1,8 +1,8 @@
 {
-  "name": "gladys-integration-template-js",
+  "name": "gladys-theengs",
   "version": "1.0.0",
   "private": true,
-  "description": "Official starter template to build an external integration for Gladys Assistant with the JavaScript SDK.",
+  "description": "Gladys Assistant integration for OpenMQTTGateway and Theengs Gateway: the BLE and 433 MHz sensors they decode, read from MQTT.",
   "type": "module",
   "main": "index.js",
   "scripts": {

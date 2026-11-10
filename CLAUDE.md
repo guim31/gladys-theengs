@@ -32,15 +32,19 @@ pushing.
 
 ```
 index.js                          SDK wiring only: handlers registered before connect()
-src/devices/index.js              registry of the device blueprints + dispatch helpers
-src/devices/<type>.js             one device type per file (buildDevice, onPoll, onSetValue...)
-src/scenes.js                     scene action handlers (manifest `scene_actions`)
-src/widgets.js                    dashboard widget handlers (manifest `widgets`)
+src/app.js                        every SDK handler (discovery, actions, scene action, widget, config)
+src/hub.js                        MQTT link, gateways and sensors heard, states, scene events
+src/theengs.js                    gateway topics and payloads -> values by feature key
+src/devices.js                    sensor and gateway devices, features, Gladys state conversion
+src/mqtt.js                       MQTT client (subscribes only), link states
+src/scenes.js                     scene action handler (manifest `scene_actions`)
+src/widgets.js                    dashboard widget handler (manifest `widgets`)
+src/texts.js                      every text, in en/fr/de/es
 src/config.js                     DEFAULT_CONFIG (mirrors the manifest defaults) + normalization
-src/weather.js                    example driver (Open-Meteo)
+src/clientId.js                   stable MQTT client id, in /data
 gladys-assistant-integration.json manifest: name, config_schema, actions, image...
-docs/en.md, docs/fr.md            user documentation, re-hosted by Gladys (mandatory)
-test/                             node --test, against the SDK's fake Gladys (integration-sdk/testing)
+docs/{en,fr,de,es}.md             user documentation, re-hosted by Gladys (mandatory)
+test/                             node --test, against the SDK's fake Gladys and a fake broker
 .github/scripts/release.mjs       release helpers (manifest bump, changelog), tested in test/
 ```
 
@@ -251,3 +255,24 @@ long, et sur un « Sie »/« Ihr… » de politesse en allemand. Le store exige 
 - Docs `en`, `fr`, `de`, `es` avec les mêmes sections.
 - Chauffe, ouverture, sécurité : ne rien rendre pilotable « comme un thermostat » ou par un assistant
   vocal quand une erreur serait dangereuse (leçon d'OctoPrint).
+
+## Theengs / OpenMQTTGateway (propre à ce dépôt)
+
+- Format : `<racine>/<passerelle>/<module>[/...]`, racine `home` par défaut. Modules lus :
+  `BTtoMQTT` (BLE décodé par Theengs Decoder), `RTL_433toMQTT`, `433toMQTT`, `IRtoMQTT`, `LWT`,
+  `SYStoMQTT` (OpenMQTTGateway seul ; Theengs Gateway n'en publie pas). L'identité d'un capteur BLE est
+  `mac` s'il est dans le message (le décodeur l'a trouvé, l'adresse d'émission peut être aléatoire),
+  sinon `id`, comme `get_address` de Theengs Gateway.
+- Noms de propriétés : ceux de Theengs Decoder (`src/devices/*_json.h`, champ `properties`), pas
+  d'invention. Pièges relevés dans ses tests : `open` vaut `true/false` ou `0/1` (BTHome) pour un
+  contact, mais un **pourcentage** pour un store (type `WCVR`, SwitchBot Blind Tilt, dont `motion` est le
+  moteur) ; `pres` est en **bar** pour les pneus (type `TIRE`) ; un message chiffré (`encr`, `cipher`)
+  n'a aucune valeur ; `type: "RMAC"` = adresse aléatoire (téléphones, balises Apple/Microsoft, GAEN).
+- Un capteur n'est proposé que s'il a au moins une valeur mappée ; la structure grandit avec les clés
+  vues (sonde branchée plus tard, paquets BTHome alternés de PVVX) → « Mettre à jour ».
+- Mesures publiées au tick (30 s, arrondies, `publishChangedStates`), valeurs binaires tout de suite.
+  Plusieurs passerelles relaient la même annonce : boutons dédoublonnés par `packet`, codes par
+  fenêtre de 1,5 s.
+- `opening-sensor` : ouvert = 0, figé par un test (`hub.test.js`).
+- Licences : Theengs et OpenMQTTGateway sont en GPL-3.0 : aucune ligne de leur code ni de leurs
+  tests n'est copiée ; les fixtures sont écrites à la main au même format.
