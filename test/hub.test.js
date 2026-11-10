@@ -274,6 +274,15 @@ test('a thermometer sending button 0 is no remote; a remote is', async (t) => {
   );
   await flush();
   assert.equal(world.gladys.fake.sceneEvents.length, 0);
+  world.broker.send(
+    'home/OMG/RTL_433toMQTT',
+    JSON.stringify({ model: 'Acme-Doorbell', id: 3, battery_ok: 1, button: 1 }),
+  );
+  await flush();
+  assert.deepEqual(
+    world.gladys.fake.sceneEvents.map((e) => e.data.code),
+    ['Acme-Doorbell-3/1'],
+  );
   // Digit strings keep every digit.
   world.broker.send(
     'home/OMG/433toMQTT',
@@ -282,7 +291,7 @@ test('a thermometer sending button 0 is no remote; a remote is', async (t) => {
   await flush();
   assert.deepEqual(
     world.gladys.fake.sceneEvents.map((e) => e.data.code),
-    ['123456789012345678901'],
+    ['Acme-Doorbell-3/1', '123456789012345678901'],
   );
 });
 

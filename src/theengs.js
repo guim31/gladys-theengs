@@ -263,14 +263,15 @@ export function parseMessage(root, topic, payload) {
         return null;
       }
       const values = rtl433Values(json);
-      // A remote: a non-zero button, command or code, and nothing measured.
-      // Many thermometers send `button: 0` with every reading.
-      const code =
-        Object.keys(values).length > 0
-          ? ''
-          : ([json.button, json.cmd, json.code, json.event]
-              .map(text)
-              .find((value) => value !== '' && value !== '0') ?? '');
+      // A remote: a non-zero button, command or code, and nothing measured
+      // (a battery state does not count: remotes send one too). Many
+      // thermometers send `button: 0` with every reading.
+      const measured = Object.keys(values).some((key) => key !== 'battery_low');
+      const code = measured
+        ? ''
+        : ([json.button, json.cmd, json.code, json.event]
+            .map(text)
+            .find((value) => value !== '' && value !== '0') ?? '');
       return { kind: 'rtl433', gateway, id, model: text(json.model), values, code };
     }
     case MODULES.RF: {
