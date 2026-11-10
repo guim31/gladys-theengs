@@ -1,41 +1,78 @@
 // -----------------------------------------------------------------------------
-// Scene actions (SDK v0.14+, Gladys 5.1+).
+// Scene action handlers (manifest `scene_actions`).
 //
-// A scene action is an OPERATION a scene author places in a scene, with
-// parameters and a result: "identify this device", "take a snapshot", "clean
-// these rooms". Each one is declared in the manifest `scene_actions` field
-// (key, label, `fields` in the config_schema grammar, scalar `outputs`) and
-// handled here, keyed by that same `key`; index.js registers every entry with
-// `gladys.onSceneAction(key, ...)`.
-//
-// Scene TRIGGERS are the other direction ("this happened"): they are fired by
-// the device that observes the event, see src/devices/motionSensor.js.
-//
-// The rules that matter:
-//   - `fields` arrive RESOLVED: scene variables substituted, defaults applied,
-//     validated by the core; a `"source": "devices"` field is the chosen
-//     device external_id;
-//   - resolve an object of the declared `outputs` (scalars only), readable by
-//     the following actions of the scene, or `undefined` for none. Keys not
-//     declared in the manifest are dropped by the core;
-//   - throwing fails THIS action only: the scene logs it and continues. A
-//     scene action is never a condition: return an output and let the scene
-//     author gate on it;
-//   - never fire a scene event as a consequence of a received action: a scene
-//     bound to that event would loop through the integration.
+// `check_sensors` — the sensors added in Gladys whose battery is low, and the
+// ones no gateway has heard for a while, as a sentence ready for a message
+// and as counts a scene can test. BLE sensors die quietly: nothing in Gladys
+// says a value stopped coming. In the language of the configuration (a scene
+// action does not receive the user's). An action applies no `default`: an
+// empty field takes the value below.
 // -----------------------------------------------------------------------------
 
-import { createLogger } from '@gladysassistant/integration-sdk';
-import { signalDevice } from './devices/index.js';
+import { CHECK_SENSORS_TEXT, pick } from './texts.js';
 
-const logger = createLogger({ name: 'scenes' });
-
-export const SCENE_ACTIONS = {
-  // The ack is awaited under the action's `timeout_seconds` (15 s in the
-  // manifest), counted from the moment the scene reaches the action.
-  async identify_device(gladys, { fields, config }) {
-    logger.info(`Scene action identify_device <- ${fields.device}`);
-    const signalled = await signalDevice(gladys, fields.device, config);
-    return { signalled };
-  },
+export const SCENE_ACTION = {
+  CHECK_SENSORS: 'check_sensors',
 };
+
+export const DEFAULT_BATTERY_THRESHOLD = 20;
+export const DEFAULT_SILENT_HOURS = 2;
+const HOUR = 3_600_000;
+
+const positive = (value, fallback, max) => {
+  const number = typeof value === 'string' ? Number(value.replace(',', '.')) : value;
+  return typeof number === 'number' && Number.isFinite(number) && number > 0
+    ? Math.min(number, max)
+    : fallback;
+};
+
+/**
+ * The sensors to look at: low battery, silent.
+ * @param {import('./hub.js').Hub} hub
+ * @param {{ batteryThreshold: number, silentHours: number }} limits
+ */
+export function sensorProblems(hub, { batteryThreshold, silentHours }) {
+  const now = hub.now();
+  const low = [];
+  const silent = [];
+  for (const { device, sensor } of hub.addedSensors()) {
+    const name = device.name || device.external_id;
+    if (now - hub.lastHeard(sensor) > silentHours * HOUR) {
+      silent.push(name);
+    }
+    const battery = sensor?.values.battery;
+    if (
+      sensor?.values.battery_low === true ||
+      (battery !== undefined && battery <= batteryThreshold)
+    ) {
+      low.push(name);
+    }
+  }
+  return { low: low.sort(), silent: silent.sort() };
+}
+
+/**
+ * @param {import('./hub.js').Hub} hub
+ * @param {{ battery_threshold?: number|string, silent_hours?: number|string }} fields
+ */
+export function checkSensors(hub, fields = {}) {
+  const text = pick(CHECK_SENSORS_TEXT, hub.config?.language ?? 'fr');
+  const silentHours = positive(fields.silent_hours, DEFAULT_SILENT_HOURS, 24 * 30);
+  const batteryThreshold = positive(fields.battery_threshold, DEFAULT_BATTERY_THRESHOLD, 100);
+  if (hub.addedSensors().length === 0) {
+    return { summary: text.noSensor, low_battery: 0, silent: 0 };
+  }
+  const { low, silent } = sensorProblems(hub, { batteryThreshold, silentHours });
+  const parts = [];
+  if (low.length > 0) {
+    parts.push(text.lowBattery(low.join(', ')));
+  }
+  if (silent.length > 0) {
+    parts.push(text.silent(silent.join(', '), silentHours));
+  }
+  return {
+    summary: parts.length > 0 ? parts.join(' ') : text.allGood,
+    low_battery: low.length,
+    silent: silent.length,
+  };
+}
