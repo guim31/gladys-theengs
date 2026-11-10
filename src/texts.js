@@ -187,8 +187,14 @@ export const CHECK_TEXT = {
   },
 };
 
-/** The kinds of button press (BTHome event codes), for the button_pressed trigger. */
-export const PRESS_KINDS = { 1: 'single', 2: 'double', 3: 'triple', 4: 'long' };
+/**
+ * The kinds of button press, for the button_pressed trigger. Theengs Decoder
+ * normalizes the codes (docs/devices/SBBT-002C.md, NODONNIU.md): 1 single,
+ * 2 double, 3 triple, 4 quadruple, 5 quintuple, 9 long, 10 release, 11 hold.
+ */
+export const PRESS_KINDS = { 1: 'single', 2: 'double', 3: 'triple', 9: 'long' };
+/** Not a press: the button released. */
+export const RELEASE_CODE = 10;
 export const pressKind = (code) => PRESS_KINDS[code] ?? 'other';
 
 /** The check_sensors scene action sentence. */

@@ -200,8 +200,8 @@ test('a button press fires once, however many gateways relay it', async (t) => {
   await world.add('ble', 'BC026E000006');
   const device = world.ids('ble', 'BC026E000006').device;
   const events = () => world.gladys.fake.sceneEvents.filter((e) => e.key === 'button_pressed');
-  // The fixture press (packet 41) came before the device was added: still fired.
-  assert.equal(events().length, 1);
+  // The fixture press (packet 41) came before the device was added: no trigger.
+  assert.equal(events().length, 0);
   const press = (packet, fields) =>
     JSON.stringify({
       id: 'BC:02:6E:00:00:06',
@@ -216,12 +216,17 @@ test('a button press fires once, however many gateways relay it', async (t) => {
   for (const gateway of ['TheengsGateway', 'OpenMQTTGateway', 'TheengsGateway']) {
     world.broker.send(`home/${gateway}/BTtoMQTT/BC026E000006`, press(42, { button: 2 }));
   }
-  world.broker.send('home/TheengsGateway/BTtoMQTT/BC026E000006', press(43, { button: 4 }));
-  // A battery-only advertisement is no press.
+  world.broker.send('home/TheengsGateway/BTtoMQTT/BC026E000006', press(43, { button: 9 }));
+  // A battery-only advertisement and a release are no press.
   world.broker.send('home/TheengsGateway/BTtoMQTT/BC026E000006', press(44, {}));
+  world.broker.send('home/TheengsGateway/BTtoMQTT/BC026E000006', press(45, { button: 10 }));
+  // The same packet id long after: a new press (counter wrapped).
+  world.advance(MINUTE);
+  world.broker.send('home/TheengsGateway/BTtoMQTT/BC026E000006', press(45, { button: 1 }));
   await flush();
-  const fired = events().slice(1);
-  assert.equal(fired.length, 2);
+  const fired = events();
+  assert.equal(fired.length, 3);
+  assert.equal(fired[2].data.press, 'single');
   const [double, long] = fired.map((e) => e.data);
   assert.deepEqual(double, {
     device,
@@ -231,6 +236,91 @@ test('a button press fires once, however many gateways relay it', async (t) => {
     device_name: 'Shelly ShellyBLU Button1 0006',
   });
   assert.equal(long.press, 'long');
+});
+
+test('a button not added to Gladys fires nothing', async (t) => {
+  const world = await startedWorld(t);
+  world.broker.send(
+    'home/TheengsGateway/BTtoMQTT/BC026E000006',
+    JSON.stringify({
+      id: 'BC:02:6E:00:00:06',
+      model_id: 'SBBT-002C',
+      type: 'BTN',
+      packet: 50,
+      button: 1,
+    }),
+  );
+  await flush();
+  assert.equal(world.gladys.fake.sceneEvents.filter((e) => e.key === 'button_pressed').length, 0);
+});
+
+test('a thermometer sending button 0 is no remote; a remote is', async (t) => {
+  const world = await startedWorld(t, { send: false });
+  const reading = JSON.stringify({
+    model: 'Prologue-TH',
+    id: 116,
+    channel: 2,
+    button: 0,
+    battery_ok: 1,
+    temperature_C: 18.2,
+    humidity: 55,
+  });
+  world.broker.send('home/OMG/RTL_433toMQTT', reading);
+  world.advance(MINUTE);
+  world.broker.send('home/OMG/RTL_433toMQTT', reading);
+  world.broker.send(
+    'home/OMG/RTL_433toMQTT',
+    JSON.stringify({ model: 'Generic-Remote', id: 9, cmd: 0 }),
+  );
+  await flush();
+  assert.equal(world.gladys.fake.sceneEvents.length, 0);
+  // Digit strings keep every digit.
+  world.broker.send(
+    'home/OMG/433toMQTT',
+    JSON.stringify({ value: '123456789012345678901', protocol: 1 }),
+  );
+  await flush();
+  assert.deepEqual(
+    world.gladys.fake.sceneEvents.map((e) => e.data.code),
+    ['123456789012345678901'],
+  );
+});
+
+test('implausible values are dropped, a battery voltage stays fed', async (t) => {
+  const world = await startedWorld(t, { send: false });
+  const send = (fields) =>
+    world.broker.send(
+      'home/TheengsGateway/BTtoMQTT/C00000000001',
+      JSON.stringify({
+        id: 'C0:00:00:00:00:01',
+        brand: 'Ruuvi',
+        model: 'RuuviTag',
+        model_id: 'RuuviTag_RAWv2',
+        type: 'THBX',
+        ...fields,
+      }),
+    );
+  send({ tempc: 163.835, hum: 163.835, volt: 3.01, pres: 1e308 });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await world.add('ble', 'C00000000001');
+  const ids = world.ids('ble', 'C00000000001');
+  const device = world.gladys.fake.discoveredDevices.find((d) => d.external_id === ids.device);
+  assert.deepEqual(featureKeys(device), ['battery_voltage']);
+  send({ tempc: 21.5, batt: 80, volt: 2.95 });
+  await world.hub.tick();
+  assert.equal(lastState(world, ids.feature('battery_voltage')), 2.95);
+});
+
+test('long gone sensors and gateways are forgotten, added ones kept', async (t) => {
+  const world = await startedWorld(t);
+  await world.add('ble', 'A4C138000001');
+  world.advance(25 * HOUR);
+  await world.hub.tick();
+  assert.deepEqual([...world.hub.sensors.keys()], ['ble:A4C138000001']);
+  assert.equal(world.hub.gateways.size, 2);
+  world.advance(7 * 24 * HOUR);
+  await world.hub.tick();
+  assert.equal(world.hub.gateways.size, 0);
 });
 
 test('a 433 MHz or infrared code fires code_received once per press, and is listed', async (t) => {

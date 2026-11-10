@@ -19,6 +19,8 @@
 // exposure notifications) are left out.
 // -----------------------------------------------------------------------------
 
+import { RELEASE_CODE } from './texts.js';
+
 export const MODULES = {
   BLE: 'BTtoMQTT',
   RTL_433: 'RTL_433toMQTT',
@@ -125,12 +127,12 @@ export function bleValues(payload) {
 export function blePresses(payload) {
   const presses = [];
   const single = number(payload.button);
-  if (single !== undefined && single > 0) {
+  if (single !== undefined && single > 0 && single !== RELEASE_CODE) {
     presses.push({ button: 1, code: single });
   }
   for (const n of [1, 2, 3, 4]) {
     const code = number(payload[`button${n}`]);
-    if (code !== undefined && code > 0) {
+    if (code !== undefined && code > 0 && code !== RELEASE_CODE) {
       presses.push({ button: n, code });
     }
   }
@@ -162,8 +164,8 @@ export function rtl433Values(payload) {
 }
 
 /**
- * The stable identity of an rtl_433 sensor: its model, channel and id (the id
- * of many cheap sensors changes when the battery is replaced).
+ * The identity of an rtl_433 sensor: its model, channel and id. Many cheap
+ * sensors draw a new id when the battery is replaced: a new device then.
  * @returns {string|null}
  */
 export function rtl433Id(payload) {
@@ -186,6 +188,12 @@ function parseJson(payload) {
     return null;
   }
 }
+
+/** A code as received: a long digit string must not go through a float. */
+const codeText = (value) =>
+  typeof value === 'string' && /^\d+$/.test(value.trim())
+    ? value.trim()
+    : BigInt(Math.trunc(Number(value))).toString();
 
 // The NEC "repeat" code, sent while a key is held: not a key of its own.
 const IR_REPEAT = 0xffffffff;
@@ -254,15 +262,16 @@ export function parseMessage(root, topic, payload) {
       if (!id) {
         return null;
       }
-      const code = text(json.button ?? json.cmd ?? json.code ?? json.event ?? '');
-      return {
-        kind: 'rtl433',
-        gateway,
-        id,
-        model: text(json.model),
-        values: rtl433Values(json),
-        code,
-      };
+      const values = rtl433Values(json);
+      // A remote: a non-zero button, command or code, and nothing measured.
+      // Many thermometers send `button: 0` with every reading.
+      const code =
+        Object.keys(values).length > 0
+          ? ''
+          : ([json.button, json.cmd, json.code, json.event]
+              .map(text)
+              .find((value) => value !== '' && value !== '0') ?? '');
+      return { kind: 'rtl433', gateway, id, model: text(json.model), values, code };
     }
     case MODULES.RF: {
       const value = number(json.value);
@@ -273,7 +282,7 @@ export function parseMessage(root, topic, payload) {
         kind: 'code',
         gateway,
         source: 'rf',
-        code: String(value),
+        code: codeText(json.value),
         protocol: text(json.protocol),
       };
     }
@@ -290,7 +299,7 @@ export function parseMessage(root, topic, payload) {
         kind: 'code',
         gateway,
         source: 'ir',
-        code: hex !== '' ? hex : String(value),
+        code: hex !== '' ? hex : codeText(json.value),
         protocol: text(json.protocol_name ?? json.protocol),
       };
     }

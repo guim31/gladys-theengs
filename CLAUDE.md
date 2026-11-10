@@ -274,5 +274,11 @@ long, et sur un « Sie »/« Ihr… » de politesse en allemand. Le store exige 
   Plusieurs passerelles relaient la même annonce : boutons dédoublonnés par `packet`, codes par
   fenêtre de 1,5 s.
 - `opening-sensor` : ouvert = 0, figé par un test (`hub.test.js`).
+- Boutons : Theengs Decoder **normalise** les codes d'appui (1 simple, 2 double, 3 triple, 4/5
+  quadruple/quintuple, **9 long**, 10 relâché, 11 maintenu), ce ne sont pas ceux de BTHome. Seuls les
+  boutons ajoutés à Gladys déclenchent. rtl_433 : beaucoup de thermomètres envoient `button: 0` à chaque
+  mesure, ce n'est pas une télécommande.
+- Valeurs hors plage (`valid` dans `SENSOR_FEATURES`) jetées : Ruuvi envoie 127,99 °C ou 163,835 % pour
+  « non disponible ».
 - Licences : Theengs et OpenMQTTGateway sont en GPL-3.0 : aucune ligne de leur code ni de leurs
   tests n'est copiée ; les fixtures sont écrites à la main au même format.

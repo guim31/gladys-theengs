@@ -5,7 +5,7 @@
 // A line: the name given in Gladys, the main readings (temperature and
 // humidity, or the door, or the motion), the battery when asked, or what is
 // wrong: silent for too long, battery low, gateway offline. Content budget of
-// the core: one `status` list of 12 lines at most. Pre-localized from the
+// the core: one `status` list of 10 lines at most. Pre-localized from the
 // viewer's `language` (the core caches the content per settings, language and
 // units).
 // -----------------------------------------------------------------------------
@@ -21,7 +21,7 @@ export const WIDGET = {
 };
 
 export const CONTENT_TTL_SECONDS = 60;
-export const MAX_LINES = 12;
+export const MAX_LINES = 10;
 const MAX_LABEL = 40;
 const MAX_VALUE = 40;
 const HOUR = 3_600_000;

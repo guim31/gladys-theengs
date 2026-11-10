@@ -19,6 +19,7 @@ import {
   buildGatewayDevice,
   buildSensorDevice,
   idsOf,
+  isPlausible,
   platformIdOf,
   sensorFeatureKeys,
   sensorName,
@@ -49,6 +50,13 @@ export const DEFAULT_TIMINGS = {
   // The same code or button press relayed by several gateways, or repeated by
   // a remote, within that time is one press.
   repeatMs: 1_500,
+  // The same packet id after that long is a new press (counter wrapped or
+  // restarted by a battery swap).
+  packetMs: 10_000,
+  // Sensors not added in Gladys and not heard for that long are forgotten,
+  // gateways after a week.
+  forgetSensorMs: 24 * 60 * 60_000,
+  forgetGatewayMs: 7 * 24 * 60 * 60_000,
 };
 export const MAX_DISCOVERED = 100;
 export const MAX_RECENT_CODES = 5;
@@ -115,6 +123,8 @@ export class Hub {
     this.#reset();
     if (!isConfigured(config)) {
       await this.#status(false, MESSAGES.notConfigured);
+      // The broker is gone: so are the devices it offered.
+      await this.publishDiscovery();
       return;
     }
     const { clientId } = await this.loadClientId();
@@ -259,16 +269,19 @@ export class Hub {
     }
     sensor.lastSeen = now;
     sensor.gateways.set(gateway.name, now);
-    const before = sensorFeatureKeys(sensor.keys).length;
+    const before = sensorFeatureKeys(sensor.keys).join();
     const binary = [];
     for (const [feature, value] of Object.entries(message.values)) {
+      if (!isPlausible(feature, value)) {
+        continue;
+      }
       sensor.keys.add(feature);
       if (SENSOR_FEATURES[feature]?.binary && sensor.values[feature] !== value) {
         binary.push(feature);
       }
       sensor.values[feature] = value;
     }
-    if (sensorFeatureKeys(sensor.keys).length !== before && this.#offered(sensor)) {
+    if (sensorFeatureKeys(sensor.keys).join() !== before && this.#offered(sensor)) {
       this.scheduleDiscovery();
     }
     if (binary.length > 0) {
@@ -297,14 +310,22 @@ export class Hub {
     if (message.presses.length === 0) {
       return;
     }
+    const ids = idsOf(this.gladys, BLE_TYPE, sensor.id);
+    const device = this.#added(ids.device);
+    // A neighbour's button is no trigger: only the buttons added to Gladys.
+    if (!device) {
+      return;
+    }
     if (message.packet !== undefined) {
-      if (sensor.lastPacket === message.packet) {
+      if (
+        sensor.lastPacket === message.packet &&
+        now - sensor.lastPacketAt <= this.timings.packetMs
+      ) {
         return;
       }
       sensor.lastPacket = message.packet;
+      sensor.lastPacketAt = now;
     }
-    const ids = idsOf(this.gladys, BLE_TYPE, sensor.id);
-    const device = this.#added(ids.device);
     for (const { button, code } of message.presses) {
       if (
         message.packet === undefined &&
@@ -318,7 +339,7 @@ export class Hub {
         press: pressKind(code),
         button,
         code,
-        device_name: device?.name || sensorName(sensor),
+        device_name: device.name || sensorName(sensor),
       });
     }
   }
@@ -480,14 +501,11 @@ export class Hub {
       if (!sensor) {
         continue; // not heard since the start: nothing to say yet
       }
+      // Every value heard: #publish keeps the features the added device has
+      // (a battery voltage stays fed after a percentage shows up).
       const ids = idsOf(this.gladys, kind, id);
-      for (const key of sensorFeatureKeys(sensor.keys)) {
-        if (sensor.values[key] !== undefined) {
-          states.push({
-            device_feature_external_id: ids.feature(key),
-            state: stateOf(key, sensor.values[key]),
-          });
-        }
+      for (const [key, value] of Object.entries(sensor.values)) {
+        states.push({ device_feature_external_id: ids.feature(key), state: stateOf(key, value) });
       }
     }
     for (const { name, gateway } of this.addedGateways()) {
@@ -512,12 +530,33 @@ export class Hub {
     return states;
   }
 
-  /** Publish the changed states of the added devices. */
+  /** Publish the changed states of the added devices, forget the long gone. */
   async tick() {
     if (!this.config || !isConfigured(this.config)) {
       return;
     }
+    this.#prune(this.now());
     await this.#publish(this.currentStates());
+  }
+
+  #prune(now) {
+    const added = new Set((this.gladys.devices ?? []).map((device) => device.external_id));
+    for (const [key, sensor] of this.sensors) {
+      if (
+        now - sensor.lastSeen > this.timings.forgetSensorMs &&
+        !added.has(idsOf(this.gladys, sensor.kind, sensor.id).device)
+      ) {
+        this.sensors.delete(key);
+      }
+    }
+    for (const [name, gateway] of this.gateways) {
+      if (
+        now - gateway.lastSeen > this.timings.forgetGatewayMs &&
+        !added.has(idsOf(this.gladys, GATEWAY_TYPE, name).device)
+      ) {
+        this.gateways.delete(name);
+      }
+    }
   }
 
   async #publish(states) {
@@ -540,9 +579,11 @@ export class Hub {
     }
   }
 
-  /** Everything again: a device was just added or updated in Gladys. */
+  /**
+   * A device was just added or updated in Gladys: the SDK has forgotten the
+   * states of that device only, the next publication sends them again.
+   */
   async republish() {
-    this.gladys.forgetPublishedStates?.();
     await this.tick();
   }
 

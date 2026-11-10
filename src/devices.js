@@ -26,28 +26,31 @@ export const BLE_TYPE = 'ble';
 export const RTL_433_TYPE = 'rtl433';
 export const GATEWAY_TYPE = 'gateway';
 
-const temperature = (max) => ({
+const temperature = (max, valid) => ({
   category: CAT.TEMPERATURE_SENSOR,
   type: TYPE.SENSOR.DECIMAL,
   unit: UNIT.CELSIUS,
   min: -40,
   max,
   decimals: 1,
+  valid,
 });
 
 /**
  * The sensor features, in the order of a device's feature list. `decimals`:
  * the rounding of the published value (the readings jitter); `binary`:
- * published at once, the others at the next tick.
+ * published at once, the others at the next tick; `valid`: the plausible
+ * values, the others are dropped (Ruuvi sends 127.99 °C or 163.835 % for
+ * "not available").
  */
 export const SENSOR_FEATURES = {
-  temperature: temperature(100),
+  temperature: temperature(100, [-60, 125]),
   // Probes (barbecue thermometers): up to 300 °C.
-  temperature_2: temperature(300),
-  temperature_3: temperature(300),
-  temperature_4: temperature(300),
-  temperature_5: temperature(300),
-  temperature_6: temperature(300),
+  temperature_2: temperature(300, [-60, 400]),
+  temperature_3: temperature(300, [-60, 400]),
+  temperature_4: temperature(300, [-60, 400]),
+  temperature_5: temperature(300, [-60, 400]),
+  temperature_6: temperature(300, [-60, 400]),
   humidity: {
     category: CAT.HUMIDITY_SENSOR,
     type: TYPE.SENSOR.DECIMAL,
@@ -55,6 +58,7 @@ export const SENSOR_FEATURES = {
     min: 0,
     max: 100,
     decimals: 0,
+    valid: [0, 100],
   },
   battery: {
     category: CAT.BATTERY,
@@ -63,6 +67,7 @@ export const SENSOR_FEATURES = {
     min: 0,
     max: 100,
     decimals: 0,
+    valid: [0, 100],
   },
   // Only for a device that does not report a percentage.
   battery_voltage: {
@@ -70,8 +75,9 @@ export const SENSOR_FEATURES = {
     type: TYPE.ENERGY_SENSOR.VOLTAGE,
     unit: UNIT.VOLT,
     min: 0,
-    max: 5,
+    max: 60,
     decimals: 2,
+    valid: [0, 60],
   },
   battery_low: { category: CAT.BATTERY_LOW, type: 'binary', min: 0, max: 1, binary: true },
   soil_moisture: {
@@ -81,6 +87,7 @@ export const SENSOR_FEATURES = {
     min: 0,
     max: 100,
     decimals: 0,
+    valid: [0, 100],
   },
   illuminance: {
     category: CAT.LIGHT_SENSOR,
@@ -89,6 +96,7 @@ export const SENSOR_FEATURES = {
     min: 0,
     max: 100000,
     decimals: 0,
+    valid: [0, 200000],
   },
   pressure: {
     category: CAT.PRESSURE_SENSOR,
@@ -97,6 +105,7 @@ export const SENSOR_FEATURES = {
     min: 800,
     max: 1100,
     decimals: 1,
+    valid: [300, 1200],
   },
   co2: {
     category: CAT.CO2_SENSOR,
@@ -105,6 +114,7 @@ export const SENSOR_FEATURES = {
     min: 0,
     max: 5000,
     decimals: 0,
+    valid: [0, 20000],
   },
   pm25: {
     category: CAT.PM25_SENSOR,
@@ -113,6 +123,7 @@ export const SENSOR_FEATURES = {
     min: 0,
     max: 500,
     decimals: 0,
+    valid: [0, 2000],
   },
   pm10: {
     category: CAT.PM10_SENSOR,
@@ -121,6 +132,7 @@ export const SENSOR_FEATURES = {
     min: 0,
     max: 500,
     decimals: 0,
+    valid: [0, 2000],
   },
   formaldehyde: {
     category: CAT.FORMALDEHYD_SENSOR,
@@ -129,6 +141,7 @@ export const SENSOR_FEATURES = {
     min: 0,
     max: 5,
     decimals: 2,
+    valid: [0, 10],
   },
   motion: { category: CAT.MOTION_SENSOR, type: TYPE.SENSOR.BINARY, min: 0, max: 1, binary: true },
   opening: {
@@ -145,6 +158,7 @@ export const SENSOR_FEATURES = {
     min: 0,
     max: 15,
     decimals: 0,
+    valid: [0, 20],
   },
   wind_speed: {
     category: CAT.SPEED_SENSOR,
@@ -153,6 +167,7 @@ export const SENSOR_FEATURES = {
     min: 0,
     max: 250,
     decimals: 1,
+    valid: [0, 400],
   },
 };
 
@@ -162,6 +177,15 @@ export const MAX_COUNT = 1000;
 // The Gladys opening-sensor says 0 = open, 1 = closed (OPENING_SENSOR_STATE),
 // the reverse of the motion and leak sensors.
 export const OPENING_STATE = { OPEN: 0, CLOSED: 1 };
+
+/** A value worth keeping: a two-state one, or a finite number in the plausible range. */
+export function isPlausible(key, value) {
+  if (typeof value === 'boolean') {
+    return true;
+  }
+  const valid = SENSOR_FEATURES[key]?.valid;
+  return Number.isFinite(value) && (!valid || (value >= valid[0] && value <= valid[1]));
+}
 
 /** The Gladys state of a feature, from the value parsed out of a message. */
 export function stateOf(key, value) {
@@ -260,7 +284,7 @@ export function buildSensorDevice(gladys, sensor, language) {
     params,
     features: sensorFeatureKeys(sensor.keys).map((key) => {
       // eslint-disable-next-line no-unused-vars
-      const { decimals, binary, ...fields } = SENSOR_FEATURES[key];
+      const { decimals, binary, valid, ...fields } = SENSOR_FEATURES[key];
       return feature(key, fields);
     }),
   };
