@@ -30,6 +30,12 @@ Gladys before reporting a problem.
 
 In scope: the code of this repository and the Docker image it publishes.
 
+The integration connects to the MQTT broker you configure and only
+subscribes to the gateway topics: it never publishes. The broker password is
+stored by Gladys with the integration configuration and never written to the
+logs; addresses are logged without credentials. `/data` holds a single file,
+the MQTT client id (`client-id`). Sensor readings stay in memory.
+
 Out of scope: Gladys Assistant itself (see its
 [security policy](https://github.com/GladysAssistant/Gladys/security/policy)),
-and the third-party services and devices the integration talks to.
+the MQTT broker, OpenMQTTGateway, Theengs Gateway and the devices they hear.
