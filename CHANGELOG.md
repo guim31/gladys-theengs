@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-12
+
 ### Added
 
 - The BLE sensors decoded by OpenMQTTGateway or Theengs Gateway, read from the
@@ -24,3 +26,6 @@ the notes of the version's GitHub Release.
 - Scene action: check the sensors (low batteries, silent sensors).
 - Dashboard widget: the sensors and gateways, those needing attention first.
 - Texts and documentation in English, French, German and Spanish.
+
+[Unreleased]: https://github.com/guim31/gladys-theengs/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/guim31/gladys-theengs/releases/tag/v1.0.0
